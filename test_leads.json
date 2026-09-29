@@ -1,0 +1,22 @@
+[
+  {"expect_tier": "Hot", "name": "Maria Lopez", "email": "maria.lopez@brightpath-realty.com", "company": "BrightPath Realty", "phone": "+1 512 555 0142", "budget": "$5,000 – $15,000", "timeline": "ASAP / this month", "source": "website_form",
+   "message": "I'm the founder of a 12-agent real-estate brokerage. Leads from Zillow and our website sit in a shared inbox for hours. We need an automation that qualifies every lead with AI, pushes it into HubSpot with the right agent as owner and pings them on Telegram. Budget around $8k, we want it live within 2 weeks."},
+  {"expect_tier": "Hot", "name": "Daniel Weber", "email": "d.weber@nordcart.de", "company": "NordCart GmbH", "budget": "$15,000+", "timeline": "ASAP / this month", "source": "website_form",
+   "message": "Head of Operations at an e-commerce company (Shopify, 40k orders/month). We want an AI support chatbot on WhatsApp that answers order-status questions from our docs and escalates to humans, plus CRM integration with Pipedrive. Budget $20k, need to start next week."},
+  {"expect_tier": "Hot", "name": "Aigerim Sadykova", "email": "aigerim@silkroad-edu.kz", "company": "SilkRoad Education", "budget": "$1,000 – $5,000", "timeline": "ASAP / this month", "source": "email",
+   "message": "Здравствуйте! Я основатель онлайн-школы. Нужна автоматизация заявок: заявки с сайта и Instagram должны попадать в Google Sheets и CRM, а менеджеры получать уведомление в Telegram. Бюджет $3,000, запуск срочно, в течение месяца."},
+  {"expect_tier": "Hot", "name": "Priya Nair", "email": "priya@ledgerly.io", "company": "Ledgerly", "budget": "$5,000 – $15,000", "timeline": "ASAP / this month", "source": "website_form",
+   "message": "CTO at a B2B SaaS startup. Our n8n workflows for lead routing keep breaking and nobody owns them. We need someone to rebuild the workflow with error handling, add AI enrichment and connect Airtable + Slack. Budget $6,000, timeline this month."},
+  {"expect_tier": "Warm", "name": "Tom Becker", "email": "tom@beckerconsulting.co", "company": "Becker Consulting", "budget": "", "timeline": "Next quarter", "source": "website_form",
+   "message": "We're a small consultancy thinking about automating our CRM updates and proposal follow-ups. Maybe next quarter. Can you share examples and typical pricing?"},
+  {"expect_tier": "Warm", "name": "Sofia Rossi", "email": "sofia.rossi@gmail.com", "company": "", "budget": "$1,000 – $5,000", "timeline": "Just exploring", "source": "website_form",
+   "message": "I run an Etsy shop and want a chatbot that answers customer questions automatically. Budget maybe $1,500."},
+  {"expect_tier": "Cold", "name": "Kevin", "email": "kevin.p@yahoo.com", "company": "", "budget": "", "timeline": "", "source": "website_form",
+   "message": "how much?"},
+  {"expect_tier": "Cold", "name": "SEO Pro Team", "email": "offers@rank-boost-seo.net", "company": "RankBoost", "budget": "", "timeline": "", "source": "email",
+   "message": "Dear Sir, we offer high quality backlinks and guest post services to rank your website on the first page of Google. Cheap price, click here for offer!!!"},
+  {"expect_tier": "Cold", "name": "Alex Crypto", "email": "alex@quickcoin-invest.biz", "company": "QuickCoin", "budget": "", "timeline": "", "source": "website_form",
+   "message": "Partnership opportunity: promote our crypto trading bot to your clients and earn 50% commission in bitcoin."},
+  {"expect_tier": "Hot", "name": "James O'Connor", "email": "james@harbor-logistics.com", "company": "Harbor Logistics", "budget": "$5,000 – $15,000", "timeline": "ASAP / this month", "source": "website_form",
+   "message": "[simulate-invalid-json] Director of Sales at a logistics company. We need AI lead qualification from our quote-request form into HubSpot and Telegram alerts for reps. Budget $7,500, start this week."}
+]

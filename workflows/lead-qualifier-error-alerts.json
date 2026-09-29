@@ -1,0 +1,135 @@
+{
+  "id": "LeadQualifierErr001",
+  "name": "Lead Qualifier – Error Alerts",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🚨 Error workflow\nCatches **any** failed node in *Lead Qualifier – Main* → Telegram alert + row in the *Errors* sheet. No silent failures.",
+        "width": 560,
+        "height": 160,
+        "color": 2
+      },
+      "id": "d8ba73c1-89ec-5e5e-839b-8ff1ce5c06de",
+      "name": "Note: Errors",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -220
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "691ea739-9f1a-5d6b-8aa2-cdf3fce4022f",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Shared logic from src/lead_logic.js (generated — edit src/, then run scripts/build_workflows.py)\n// Pure business logic used inside the n8n Code nodes.\n// scripts/build_workflows.py inlines this file into every Code node, so the exact\n// same code is unit-tested with `node --test` and executed by n8n.\n\nconst FREE_EMAIL_DOMAINS = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'mail.ru', 'yandex.ru', 'icloud.com', 'proton.me', 'protonmail.com'];\nconst TIERS = ['Hot', 'Warm', 'Cold', 'Needs review'];\nconst INTENTS = ['buy', 'research', 'partnership', 'job', 'spam', 'other'];\n\nfunction clean(v, max = 2000) {\n  if (v === undefined || v === null) return '';\n  return String(v).replace(/\\s+/g, ' ').trim().slice(0, max);\n}\n\nfunction hashId(s) {\n  let h = 2166136261;\n  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }\n  return (h >>> 0).toString(16).padStart(8, '0');\n}\n\n// Accepts payloads from web forms (Tally/Typeform/HTML) or parsed emails and maps them to one shape.\nfunction normalizeLead(raw, nowIso) {\n  const body = raw && raw.body ? raw.body : (raw || {});\n  const email = clean(body.email || body.Email || body.from_email || body.from, 254).toLowerCase();\n  const name = clean(body.name || body.full_name || [body.first_name, body.last_name].filter(Boolean).join(' '), 120);\n  const domain = email.includes('@') ? email.split('@')[1] : '';\n  const errors = [];\n  if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) errors.push('invalid_email');\n  const lead = {\n    lead_id: 'L-' + hashId(email || name || nowIso),\n    name: name || 'Unknown',\n    email,\n    company: clean(body.company || body.organization, 120) || (domain && !FREE_EMAIL_DOMAINS.includes(domain) ? domain : ''),\n    domain,\n    free_email: FREE_EMAIL_DOMAINS.includes(domain),\n    phone: clean(body.phone, 40),\n    website: clean(body.website || (domain && !FREE_EMAIL_DOMAINS.includes(domain) ? 'https://' + domain : ''), 200),\n    budget: clean(body.budget, 80),\n    timeline: clean(body.timeline, 80),\n    message: clean(body.message || body.text || body.body_text || body.subject, 3000),\n    source: clean(body.source || 'web_form', 40),\n    received_at: nowIso,\n  };\n  return { lead, errors };\n}\n\nfunction buildPrompt(lead, { strict = false, model = 'gpt-4o-mini', maxTokens = 1200 } = {}) {\n  const system = [\n    'You are a B2B sales-development assistant for an AI automation agency.',\n    'Qualify the inbound lead and answer ONLY with a JSON object, no markdown, with keys:',\n    '{\"score\": integer 0-100, \"tier\": \"Hot\"|\"Warm\"|\"Cold\", \"reason\": string (max 160 chars),',\n    ' \"intent\": \"buy\"|\"research\"|\"partnership\"|\"job\"|\"spam\"|\"other\", \"budget\": string, \"timeline\": string,',\n    ' \"is_spam\": boolean, \"suggested_reply\": string (2-4 sentences, friendly, in the lead\\'s language)}.',\n    'Scoring rubric: clear business need for automation/AI (+30), budget stated >= $1,000 (+25),',\n    'timeline within 1 month (+20), company email/domain (+10), decision maker (+10), detail (+5).',\n    'Spam, SEO/link offers, crypto, job seekers or vague one-liners score below 20.',\n    'Tier: Hot >= 70, Warm 40-69, Cold < 40.',\n  ].join('\\n');\n  const user = (strict ? 'STRICT MODE: your previous answer was not valid JSON. Return ONLY the JSON object.\\n' : '') +\n    'Lead:\\n<lead>\\n' + JSON.stringify(lead) + '\\n</lead>';\n  return {\n    model,\n    max_tokens: maxTokens,\n    temperature: 0.2,\n    response_format: { type: 'json_object' },\n    messages: [{ role: 'system', content: system }, { role: 'user', content: user }],\n  };\n}\n\nfunction extractJson(text) {\n  if (typeof text !== 'string') return null;\n  const t = text.replace(/```(?:json)?/gi, '').trim();\n  const start = t.indexOf('{');\n  const end = t.lastIndexOf('}');\n  if (start < 0 || end <= start) return null;\n  try { return JSON.parse(t.slice(start, end + 1)); } catch (e) { return null; }\n}\n\nfunction tierFromScore(score, hot = 70) {\n  if (score >= hot) return 'Hot';\n  if (score >= 40) return 'Warm';\n  return 'Cold';\n}\n\n// Validates the LLM output against the JSON schema (hand-rolled, no deps inside n8n).\nfunction validateQualification(obj, hot = 70) {\n  const errors = [];\n  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { valid: false, errors: ['not_an_object'], data: null };\n  const score = Number(obj.score);\n  if (!Number.isInteger(score) || score < 0 || score > 100) errors.push('score must be an integer 0-100');\n  if (!['Hot', 'Warm', 'Cold'].includes(obj.tier)) errors.push('tier must be Hot|Warm|Cold');\n  if (typeof obj.reason !== 'string' || !obj.reason.trim()) errors.push('reason required');\n  if (typeof obj.suggested_reply !== 'string' || !obj.suggested_reply.trim()) errors.push('suggested_reply required');\n  if (obj.intent !== undefined && !INTENTS.includes(obj.intent)) errors.push('intent invalid');\n  if (errors.length) return { valid: false, errors, data: null };\n  const data = {\n    score,\n    // The tier is derived from the score so routing is deterministic even if the model disagrees with itself.\n    tier: tierFromScore(score, hot),\n    reason: obj.reason.trim().slice(0, 200),\n    intent: obj.intent || 'other',\n    budget: clean(obj.budget, 80),\n    timeline: clean(obj.timeline, 80),\n    is_spam: Boolean(obj.is_spam),\n    suggested_reply: obj.suggested_reply.trim().slice(0, 1200),\n  };\n  return { valid: true, errors: [], data };\n}\n\nfunction parseLlmResponse(resp, hot = 70) {\n  const content = resp && resp.choices && resp.choices[0] && resp.choices[0].message ? resp.choices[0].message.content : null;\n  const usage = (resp && resp.usage) || {};\n  const v = validateQualification(extractJson(content), hot);\n  return { ...v, usage: { prompt_tokens: usage.prompt_tokens || 0, completion_tokens: usage.completion_tokens || 0 }, model: (resp && resp.model) || '' };\n}\n\nfunction fallbackQualification(errors) {\n  return {\n    score: 0, tier: 'Needs review', reason: 'AI output invalid after retry: ' + (errors || []).join('; ').slice(0, 150),\n    intent: 'other', budget: '', timeline: '', is_spam: false,\n    suggested_reply: '',\n  };\n}\n\nfunction computeCost(usages, priceInPerM, priceOutPerM) {\n  let pin = 0, pout = 0;\n  for (const u of usages) { pin += u.prompt_tokens || 0; pout += u.completion_tokens || 0; }\n  const cost = (pin * Number(priceInPerM || 0) + pout * Number(priceOutPerM || 0)) / 1e6;\n  return { prompt_tokens: pin, completion_tokens: pout, cost_usd: Math.round(cost * 1e6) / 1e6 };\n}\n\n// Running average kept in n8n workflow static data (persisted for production executions).\nfunction updateCostStats(stats, costUsd) {\n  const s = { leads: (stats.leads || 0) + 1, total_cost_usd: (stats.total_cost_usd || 0) + costUsd };\n  s.avg_cost_usd = Math.round((s.total_cost_usd / s.leads) * 1e6) / 1e6;\n  return s;\n}\n\nfunction buildCrmRecord(lead, q, meta) {\n  return {\n    lead_id: lead.lead_id,\n    name: lead.name,\n    email: lead.email,\n    company: lead.company,\n    phone: lead.phone,\n    source: lead.source,\n    message: lead.message,\n    score: q.score,\n    tier: q.tier,\n    reason: q.reason,\n    intent: q.intent,\n    budget: q.budget || lead.budget,\n    timeline: q.timeline || lead.timeline,\n    suggested_reply: q.suggested_reply,\n    status: q.tier === 'Needs review' ? 'Needs review' : (q.tier === 'Hot' ? 'Contact now' : 'New'),\n    ai_model: meta.model,\n    ai_attempts: meta.attempts,\n    ai_tokens: meta.cost.prompt_tokens + meta.cost.completion_tokens,\n    ai_cost_usd: meta.cost.cost_usd,\n    avg_ai_cost_per_lead_usd: meta.stats.avg_cost_usd,\n    received_at: lead.received_at,\n    processed_at: meta.now,\n  };\n}\n\nfunction splitName(name) {\n  const parts = String(name || '').trim().split(/\\s+/);\n  return { first: parts[0] || '', last: parts.slice(1).join(' ') };\n}\n\n// --- CRM adapters (request bodies for the real public APIs) ---\nfunction hubspotUpsertBody(r) {\n  const n = splitName(r.name);\n  return {\n    inputs: [{\n      idProperty: 'email', id: r.email,\n      properties: {\n        email: r.email, firstname: n.first, lastname: n.last, company: r.company, phone: r.phone,\n        hs_lead_status: r.tier === 'Hot' ? 'OPEN' : 'NEW', lifecyclestage: 'lead',\n        ai_score: r.score, ai_tier: r.tier, ai_reason: r.reason, ai_intent: r.intent,\n        ai_budget: r.budget, ai_timeline: r.timeline, ai_suggested_reply: r.suggested_reply,\n        ai_cost_usd: r.ai_cost_usd, ai_avg_cost_per_lead_usd: r.avg_ai_cost_per_lead_usd,\n        lead_source_detail: r.source, lead_message: r.message,\n      },\n    }],\n  };\n}\n\nconst AIRTABLE_FIELDS = {\n  lead_id: 'Lead ID', name: 'Name', email: 'Email', company: 'Company', phone: 'Phone', source: 'Source',\n  message: 'Message', score: 'Score', tier: 'Tier', reason: 'Reason', intent: 'Intent', budget: 'Budget',\n  timeline: 'Timeline', suggested_reply: 'Suggested Reply', status: 'Status', ai_model: 'AI Model',\n  ai_attempts: 'AI Attempts', ai_tokens: 'AI Tokens', ai_cost_usd: 'AI Cost USD',\n  avg_ai_cost_per_lead_usd: 'Avg AI Cost per Lead USD', received_at: 'Received At', processed_at: 'Processed At',\n};\n\nfunction toLabeledFields(r) {\n  const f = {};\n  for (const [k, label] of Object.entries(AIRTABLE_FIELDS)) f[label] = r[k] === undefined ? '' : r[k];\n  return f;\n}\n\nfunction airtableUpsertBody(r) {\n  return { performUpsert: { fieldsToMergeOn: ['Email'] }, typecast: true, records: [{ fields: toLabeledFields(r) }] };\n}\n\nfunction sheetsUpsertBody(r, token) {\n  return { token: token || '', action: 'upsert', sheet: 'Leads', key: 'Email', record: toLabeledFields(r) };\n}\n\nfunction parseCrmResult(target, resp) {\n  resp = resp || {};\n  if (target === 'hubspot') {\n    const res = (resp.results || [])[0] || {};\n    return { crm: 'hubspot', crm_record_id: String(res.id || ''), action: res.new ? 'created' : 'updated' };\n  }\n  if (target === 'airtable') {\n    const rec = (resp.records || [])[0] || {};\n    const created = (resp.createdRecords || []).includes(rec.id);\n    return { crm: 'airtable', crm_record_id: rec.id || '', action: created ? 'created' : 'updated' };\n  }\n  return { crm: 'sheets', crm_record_id: resp.row ? 'row-' + resp.row : '', action: resp.action || 'unknown' };\n}\n\n// --- Notifications ---\nfunction esc(s) { return String(s || '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c])); }\n\nfunction telegramAlert(r, chatId) {\n  const text = [\n    `🔥 <b>Hot lead — ${r.score}/100</b>`,\n    `<b>${esc(r.name)}</b> · ${esc(r.company || '—')}`,\n    `✉️ ${esc(r.email)}${r.phone ? ' · 📞 ' + esc(r.phone) : ''}`,\n    `💡 ${esc(r.reason)}`,\n    r.budget || r.timeline ? `💰 ${esc(r.budget || '?')} · ⏱ ${esc(r.timeline || '?')}` : '',\n    '',\n    `<b>Suggested reply:</b>`,\n    `<i>${esc(r.suggested_reply)}</i>`,\n  ].filter((l) => l !== null).join('\\n');\n  return { chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true };\n}\n\nfunction emailAlert(r, from, to) {\n  return {\n    from, to: [to],\n    subject: `🔥 Hot lead: ${r.name} (${r.company || r.email}) — score ${r.score}`,\n    html: `<h2>Hot lead — ${r.score}/100</h2><p><b>${esc(r.name)}</b>, ${esc(r.company)}<br>${esc(r.email)} ${esc(r.phone)}</p>` +\n      `<p><b>Why:</b> ${esc(r.reason)}</p><p><b>Budget:</b> ${esc(r.budget)} · <b>Timeline:</b> ${esc(r.timeline)}</p>` +\n      `<p><b>Message:</b> ${esc(r.message)}</p><hr><p><b>Suggested reply:</b><br>${esc(r.suggested_reply)}</p>`,\n  };\n}\n\nfunction formatErrorAlert(errData, nowIso) {\n  const ex = (errData && errData.execution) || {};\n  const wf = (errData && errData.workflow) || {};\n  const err = ex.error || {};\n  const record = {\n    time: nowIso,\n    workflow: wf.name || '',\n    execution_id: String(ex.id || ''),\n    failed_node: ex.lastNodeExecuted || (err.node && err.node.name) || '',\n    error: clean(err.message || err.description || 'Unknown error', 500),\n    execution_url: ex.url || '',\n  };\n  const text = `🚨 <b>Workflow failed</b>: ${esc(record.workflow)}\\nNode: <b>${esc(record.failed_node)}</b>\\nError: <code>${esc(record.error)}</code>\\nExecution: ${esc(record.execution_id)} ${esc(record.execution_url)}`;\n  return { record, text };\n}\n\n\n// ---- node logic ----\nconst { record, text } = formatErrorAlert($input.first().json, new Date().toISOString());\nreturn [{ json: { record, telegram_body: { chat_id: $env.TELEGRAM_CHAT_ID, text, parse_mode: 'HTML' },\n  log_body: { token: $env.SHEETS_WEBHOOK_TOKEN || '', action: 'log_error', sheet: 'Errors', record } } }];\n"
+      },
+      "id": "e70cf0a6-14bd-59bb-a105-5a474e08d2a7",
+      "name": "Format Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TELEGRAM_API_BASE || 'https://api.telegram.org' }}/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "options": {
+          "timeout": 60000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.telegram_body) }}"
+      },
+      "id": "abf463a5-9cb8-552a-ba34-5f96f5b9292e",
+      "name": "Telegram: Error Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ERROR_LOG_URL || $env.SHEETS_WEBHOOK_URL }}",
+        "options": {
+          "timeout": 60000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Format Error').first().json.log_body) }}"
+      },
+      "id": "e5631737-a00e-5a96-844c-a3631987251d",
+      "name": "Log to Errors Sheet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Error Alert": {
+      "main": [
+        [
+          {
+            "node": "Log to Errors Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}

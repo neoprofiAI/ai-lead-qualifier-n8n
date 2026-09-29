@@ -1,0 +1,72 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Lead Qualifier — live view</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;background:#0f172a;color:#e2e8f0}
+header{padding:18px 28px;background:linear-gradient(90deg,#1e293b,#312e81);display:flex;align-items:center;gap:18px}
+header h1{font-size:20px;margin:0}header .sub{color:#a5b4fc;font-size:13px}
+.kpis{display:flex;gap:14px;margin-left:auto}.kpi{background:#0b1220aa;border:1px solid #334155;border-radius:10px;padding:8px 14px;text-align:center}
+.kpi b{display:block;font-size:20px}.kpi span{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em}
+main{display:grid;grid-template-columns:1fr 420px;gap:18px;padding:18px 28px}
+.card{background:#111827;border:1px solid #1f2937;border-radius:14px;padding:14px 16px}
+.card h2{font-size:14px;margin:0 0 10px;color:#c7d2fe;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:8px;align-items:center}
+.tag{font-size:11px;background:#1e293b;border:1px solid #334155;border-radius:999px;padding:2px 8px;color:#93c5fd;text-transform:none;letter-spacing:0}
+table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:#94a3b8;font-weight:600;padding:6px 8px;border-bottom:1px solid #1f2937}
+td{padding:7px 8px;border-bottom:1px solid #1f2937;vertical-align:top}td.reason{color:#cbd5e1;max-width:330px}
+.badge{display:inline-block;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700}
+.Hot{background:#7f1d1d;color:#fecaca}.Warm{background:#78350f;color:#fde68a}.Cold{background:#1e3a8a;color:#bfdbfe}.Needs{background:#4c1d95;color:#ddd6fe}
+.score{font-weight:800;font-size:15px}
+.tg{background:#17212b;border-radius:14px;overflow:hidden;border:1px solid #243140}
+.tg .top{background:#232e3c;padding:10px 14px;display:flex;gap:10px;align-items:center}
+.tg .av{width:34px;height:34px;border-radius:50%;background:#5288c1;display:flex;align-items:center;justify-content:center;font-weight:700}
+.tg .msgs{padding:12px;max-height:520px;overflow:auto;background:#0e1621}
+.bubble{background:#182533;border-radius:12px 12px 12px 4px;padding:9px 12px;margin:0 0 10px;font-size:13.5px;line-height:1.4;white-space:pre-wrap;max-width:96%}
+.bubble.err{border-left:3px solid #ef4444}.bubble .t{font-size:11px;color:#6c7883;text-align:right;margin-top:4px}
+.mail{border-bottom:1px solid #1f2937;padding:8px 0;font-size:13px}.mail .s{font-weight:700}.muted{color:#64748b;font-size:12px}
+.errrow td{color:#fca5a5}
+</style></head>
+<body>
+<header><div><h1>⚡ AI Lead Qualifier</h1><div class="sub">n8n · LLM scoring · CRM upsert · Telegram &amp; email alerts — live mock view</div></div>
+<div class="kpis"><div class="kpi"><b id="k-leads">0</b><span>leads in CRM</span></div><div class="kpi"><b id="k-hot">0</b><span>hot</span></div>
+<div class="kpi"><b id="k-alerts">0</b><span>alerts sent</span></div><div class="kpi"><b id="k-cost">$0</b><span>avg AI cost / lead</span></div>
+<div class="kpi"><b id="k-err">0</b><span>errors caught</span></div></div></header>
+<main>
+<div>
+<div class="card"><h2>CRM records <span class="tag" id="crm-name">—</span></h2>
+<table><thead><tr><th>Name / Company</th><th>Score</th><th>Tier</th><th>AI reason</th><th>Status</th><th>AI cost</th></tr></thead><tbody id="crm"></tbody></table></div>
+<div class="card" style="margin-top:18px"><h2>Errors sheet <span class="tag">error workflow</span></h2>
+<table><thead><tr><th>Time</th><th>Failed node</th><th>Error</th></tr></thead><tbody id="errors"></tbody></table></div>
+<div class="card" style="margin-top:18px"><h2>Email alerts <span class="tag">sales@</span></h2><div id="emails" class="muted">No emails yet</div></div>
+</div>
+<div class="tg"><div class="top"><div class="av">SA</div><div><b>Sales Alerts</b><div class="muted">bot · #sales-team</div></div></div><div class="msgs" id="tg"></div></div>
+</main>
+<script>
+const tierCls=t=>t==='Needs review'?'Needs':t;
+function rows(s){
+  const hs=Object.values(s.hubspot).map(r=>{const p=r.properties;return{name:(p.firstname+' '+(p.lastname||'')).trim(),company:p.company,score:p.ai_score,tier:p.ai_tier,reason:p.ai_reason,status:p.hs_lead_status,cost:p.ai_cost_usd,avg:p.ai_avg_cost_per_lead_usd,email:p.email}});
+  if(hs.length)return['HubSpot',hs];
+  const at=Object.values(s.airtable).flat().map(r=>{const f=r.fields;return{name:f['Name'],company:f['Company'],score:f['Score'],tier:f['Tier'],reason:f['Reason'],status:f['Status'],cost:f['AI Cost USD'],avg:f['Avg AI Cost per Lead USD'],email:f['Email']}});
+  if(at.length)return['Airtable',at];
+  const sh=(s.sheets.Leads||[]).map(f=>({name:f['Name'],company:f['Company'],score:f['Score'],tier:f['Tier'],reason:f['Reason'],status:f['Status'],cost:f['AI Cost USD'],avg:f['Avg AI Cost per Lead USD'],email:f['Email']}));
+  return['Google Sheets',sh];
+}
+const esc=s=>String(s??'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+async function tick(){
+  const s=await (await fetch('/api/state')).json();
+  const [crm,rs]=rows(s);document.getElementById('crm-name').textContent=crm+' (mock API)';
+  rs.sort((a,b)=>b.score-a.score);
+  document.getElementById('crm').innerHTML=rs.map(r=>`<tr><td><b>${esc(r.name)}</b><div class="muted">${esc(r.company||r.email)}</div></td><td class="score">${r.score}</td><td><span class="badge ${tierCls(r.tier)}">${esc(r.tier)}</span></td><td class="reason">${esc(r.reason)}</td><td>${esc(r.status)}</td><td class="muted">$${Number(r.cost||0).toFixed(5)}</td></tr>`).join('')||'<tr><td colspan=6 class="muted">No leads yet</td></tr>';
+  const last=rs.length?Math.max(...rs.map(r=>0)):0;
+  const avg=rs.length?rs.reduce((a,r)=>a+Number(r.cost||0),0)/rs.length:0;
+  document.getElementById('k-leads').textContent=rs.length;
+  document.getElementById('k-hot').textContent=rs.filter(r=>r.tier==='Hot').length;
+  document.getElementById('k-alerts').textContent=s.telegram.filter(m=>!m.text.startsWith('🚨')).length;
+  document.getElementById('k-cost').textContent='$'+avg.toFixed(5);
+  const errs=s.sheets.Errors||[];document.getElementById('k-err').textContent=errs.length;
+  document.getElementById('errors').innerHTML=errs.map(e=>`<tr class="errrow"><td>${esc(e.time?new Date(e.time).toLocaleTimeString([], {hour12:false}):'')}</td><td>${esc(e.failed_node)}</td><td>${esc(e.error).slice(0,140)}</td></tr>`).join('')||'<tr><td colspan=3 class="muted">No errors — all executions succeeded</td></tr>';
+  document.getElementById('emails').innerHTML=s.emails.slice().reverse().map(m=>`<div class="mail"><div class="s">${esc(m.subject)}</div><div class="muted">to ${esc((m.to||[]).join(', '))} · from ${esc(m.from)}</div></div>`).join('')||'No emails yet';
+  const tg=document.getElementById('tg');
+  tg.innerHTML=s.telegram.map(m=>{const safe=esc(m.text).replace(/&lt;(\/?)(b|i|code)&gt;/g,'<$1$2>');const t=new Date(m.date*1000).toTimeString().slice(0,5);return `<div class="bubble ${m.text.startsWith('🚨')?'err':''}">${safe}<div class="t">${t}</div></div>`}).join('')||'<div class="muted">No alerts yet</div>';
+  tg.scrollTop=tg.scrollHeight;
+}
+tick();setInterval(tick,1500);
+</script></body></html>

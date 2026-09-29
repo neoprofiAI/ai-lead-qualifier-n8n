@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Contact us — Acme Automation Agency</title>
+<style>body{font-family:Inter,Segoe UI,Arial,sans-serif;background:#f1f5f9;margin:0;display:flex;justify-content:center;padding:40px}
+.f{background:#fff;border-radius:16px;box-shadow:0 10px 30px #0f172a22;padding:28px 32px;width:520px}
+h1{margin:0 0 4px;font-size:22px}p{color:#64748b;margin:0 0 18px}label{display:block;font-size:13px;font-weight:600;margin:12px 0 4px;color:#334155}
+input,textarea,select{width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font:inherit;font-size:14px}
+textarea{height:110px}.row{display:flex;gap:12px}.row>div{flex:1}
+button{margin-top:18px;width:100%;padding:12px;border:0;border-radius:10px;background:#4f46e5;color:#fff;font-weight:700;font-size:15px;cursor:pointer}
+#res{margin-top:14px;font-size:14px;white-space:pre-wrap}</style></head>
+<body><form class="f" id="f"><h1>Let's automate your business</h1><p>Tell us what you need — we reply within minutes.</p>
+<div class="row"><div><label>Name</label><input name="name" required></div><div><label>Work email</label><input name="email" type="email" required></div></div>
+<div class="row"><div><label>Company</label><input name="company"></div><div><label>Phone</label><input name="phone"></div></div>
+<div class="row"><div><label>Budget</label><select name="budget"><option></option><option>&lt; $1,000</option><option>$1,000 – $5,000</option><option>$5,000 – $15,000</option><option>$15,000+</option></select></div>
+<div><label>Timeline</label><select name="timeline"><option></option><option>ASAP / this month</option><option>Next quarter</option><option>Just exploring</option></select></div></div>
+<label>What would you like to automate?</label><textarea name="message" required></textarea>
+<button>Send request</button><div id="res"></div></form>
+<script>
+document.getElementById('f').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));d.source='website_form';
+document.getElementById('res').textContent='Sending…';const r=await fetch('/form/submit',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)});
+document.getElementById('res').textContent=r.ok?'✅ Thanks! Our team will contact you shortly.':'⚠️ Something went wrong, please try again.'};
+</script></body></html>
